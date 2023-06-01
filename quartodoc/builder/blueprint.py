@@ -152,6 +152,55 @@ class BlueprintTransformer(PydanticTransformer):
         is_flat = el.children == ChoicesChildren.flat
         return Doc.from_griffe(el.name, obj, members=children, flat=is_flat)
 
+    def _expand_members(self, obj, path, members, name, dynamic, children):
+        children = []
+        for entry in members:
+            # Note that we could have iterated over obj.members, but currently
+            # if obj is an Alias to a class, then its members are not Aliases,
+            # but the actual objects on the target.
+            # On the other hand, we've wired get_object up to make sure getting
+            # the member of an Alias also returns an Alias.
+            member_path = self._append_member_path(path, entry)
+            obj_member = self.get_object_fixed(member_path, dynamic=dynamic)
+
+            # do no document submodules
+            if obj_member.kind.value == "module":
+                continue
+
+            if obj_member.is_class:
+                return self._expand_members(
+                    obj_member,
+                    member_path,
+                    obj_member.members,
+                    obj_member.name,
+                    dynamic,
+                    children,
+                )
+
+            # create element for child ----
+            doc = Doc.from_griffe(obj_member.name, obj_member)
+
+            # Case 1: make each member entry its own page
+            if children == ChoicesChildren.separate:
+                res = MemberPage(path=obj_member.path, contents=[doc])
+            # Case2: use just the Doc element, so it gets embedded directly
+            # into the class being documented
+            elif children in {ChoicesChildren.embedded, ChoicesChildren.flat}:
+                res = doc
+            # Case 3: make each member just a link in a summary table.
+            # if the page for the member is not created somewhere else, then it
+            # won't exist in the documentation (but its summary will still be in
+            # the table).
+            elif children == ChoicesChildren.linked:
+                res = Link(name=obj_member.path, obj=obj_member)
+            else:
+                raise ValueError(f"Unsupported value of children: {children}")
+
+            children.append(res)
+
+        is_flat = children == ChoicesChildren.flat
+        return Doc.from_griffe(name, obj, members=children, flat=is_flat)
+
     @staticmethod
     def _fetch_members(el: Auto, obj: dc.Object | dc.Alias):
         if el.members is not None:

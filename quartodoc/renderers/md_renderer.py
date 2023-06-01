@@ -249,7 +249,7 @@ class MdRenderer(Renderer):
         if el.members:
             sub_header = "#" * (self.crnt_header_level + 1)
             raw_attrs = [x for x in el.members if x.obj.is_attribute]
-            raw_meths = [x for x in el.members if x.obj.is_function]
+            raw_meths = [x for x in el.members if x.obj.is_function or x.obj.is_class]
 
 
             header = "| Name | Description |\n| --- | --- |"
