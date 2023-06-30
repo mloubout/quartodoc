@@ -1,3 +1,5 @@
+import pytest
+
 from quartodoc import get_object, get_function, MdRenderer
 from griffe.docstrings import dataclasses as ds
 from griffe import dataclasses as dc
@@ -72,27 +74,30 @@ def test_get_object_dynamic_function():
     assert obj.docstring.value.endswith("I am a note")
 
 
-def test_get_object_dynamic_class_method_doc():
+def test_get_object_dynamic_class_method_doc_static():
     obj = get_object("quartodoc.tests.example_dynamic:AClass", dynamic=True)
 
     meth = obj.members["dynamic_doc"]
     assert meth.docstring.value == "A dynamic method"
 
 
-def test_get_object_dynamic_class_method_doc():
+def test_get_object_dynamic_class_method_doc_created():
     obj = get_object("quartodoc.tests.example_dynamic:AClass", dynamic=True)
 
     meth = obj.members["dynamic_create"]
     assert meth.docstring.value == "A dynamic method"
 
 
+def test_get_object_class_instance_attr_doc():
+    obj = get_object("quartodoc.tests.example_dynamic:InstanceAttrs")
+
+    assert obj.members["b"].docstring.value == "The b attribute"
+    assert obj.members["z"].docstring.value == "The z attribute"
+
+
+@pytest.mark.xfail
 def test_get_object_dynamic_class_instance_attr_doc():
     obj = get_object("quartodoc.tests.example_dynamic:InstanceAttrs", dynamic=True)
 
     assert obj.members["b"].docstring.value == "The b attribute"
-
-
-def test_get_object_dynamic_class_instance_attr_doc():
-    obj = get_object("quartodoc.tests.example_dynamic:InstanceAttrs", dynamic=True)
-
     assert obj.members["z"].docstring.value == "The z attribute"

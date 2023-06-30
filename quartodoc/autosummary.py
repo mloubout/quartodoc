@@ -140,7 +140,7 @@ def get_object(
         if isinstance(dynamic, str):
             return dynamic_alias(path, target=dynamic, loader=loader)
 
-        return dynamic_alias(path, loader=loader)
+        return dynamic_inspect(path, loader=loader)
 
     # Case 2: static loading an object ----
     f_parent = loader.modules_collection[griffe_path.rsplit(".", 1)[0]]
@@ -236,6 +236,87 @@ def replace_docstring(obj: dc.Object | dc.Alias, f=None):
     )
 
     obj.docstring = new
+
+
+def dynamic_inspect(path, loader=None):
+    from griffe.agents.inspector import inspect
+
+    if loader is None:
+        loader = GriffeLoader()
+
+    docstring_parser = loader.docstring_parser
+    modules_collection = loader.modules_collection
+    lines_collection = loader.lines_collection
+
+    try:
+        canonical_path, parts = _dynamic_find_path(path)
+    except PathNotFoundError:
+        raise
+
+    obj_mod = inspect(
+        canonical_path,
+        docstring_parser=docstring_parser,
+        modules_collection=modules_collection,
+        lines_collection=lines_collection,
+    )
+
+    crnt_res = obj_mod
+    for k in parts:
+        crnt_res = crnt_res.members[k]
+
+    return crnt_res
+
+
+class PathNotFoundError(Exception):
+    """Could not find path to a module, from a dynamic object"""
+
+
+def _dynamic_find_path(path: str) -> dc.Object | dc.Alias:
+    """Return and Alias, using a dynamic import to find the target.
+
+    Parameters
+    ----------
+    path:
+        Full path to the object. E.g. `quartodoc.get_object`.
+    get_object_:
+        Function used to fetch the alias target.
+    target:
+        Optional path to ultimate Alias target. By default, this is inferred
+        using the __module__ attribute of the imported object.
+
+    """
+    import importlib
+
+    # TODO: raise an informative error if no period
+    try:
+        mod_name, object_path = path.split(":", 1)
+    except ValueError:
+        mod_name, object_path = path, None
+
+    # get underlying object dynamically ----
+
+    mod = importlib.import_module(mod_name)
+
+    # Case 1: path is just to a module
+    if object_path is None:
+        return mod.__name__, []
+
+    # Case 2: path is to a member of a module
+    else:
+        splits = object_path.split(".")
+
+        canonical_path = None
+        crnt_part = mod
+        for ii, attr_name in enumerate(splits):
+            crnt_part = getattr(crnt_part, attr_name)
+            if not isinstance(crnt_part, ModuleType) and not canonical_path:
+                canonical_path = crnt_part.__module__
+                return canonical_path, splits[ii:]
+            elif isinstance(crnt_part, ModuleType) and ii == (len(splits) - 1):
+                # final object is module
+                return crnt_part.__name__, []
+
+    raise PathNotFoundError(f"Module not found for path: {path}")
 
 
 def dynamic_alias(
@@ -451,10 +532,12 @@ class Builder:
         try:
             return layout.Layout(sections=sections, package=package)
         except ValidationError as e:
-            msg = 'Configuration error for YAML:\n - '
+            msg = "Configuration error for YAML:\n - "
             errors = [fmt(err) for err in e.errors() if fmt(err)]
-            first_error = errors[0] # we only want to show one error at a time b/c it is confusing otherwise
-            msg += first_error           
+            first_error = errors[
+                0
+            ]  # we only want to show one error at a time b/c it is confusing otherwise
+            msg += first_error
             raise ValueError(msg) from None
 
     # building ----------------------------------------------------------------
