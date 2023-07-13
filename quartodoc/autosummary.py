@@ -279,19 +279,14 @@ def dynamic_alias(
         parts = []
         crnt_part = mod
         for ii, attr_name in enumerate(splits):
+            # fetch part ----
             try:
                 crnt_part = getattr(crnt_part, attr_name)
-                if not isinstance(crnt_part, ModuleType) and not canonical_path:
-                    canonical_path = crnt_part.__module__ + ":" + ".".join(splits[ii:])
-                elif isinstance(crnt_part, ModuleType) and ii == (len(splits) - 1):
-                    # final object is module
-                    canonical_path = crnt_part.__name__
-
-                parts.append(crnt_part)
             except AttributeError:
                 # Fetching the attribute can fail if it is purely a type hint,
                 # and has no value. This can be an issue if you have added a
                 # docstring below the annotation
+                backup_succeeded = False
                 if canonical_path:
                     # See if we can return the static object for a value-less attr
                     try:
@@ -302,10 +297,31 @@ def dynamic_alias(
                     except Exception as e:
                         # TODO: should we fail silently, so the error below triggers?
                         raise e
+                else:
+                    # See if it's an unimported module
+                    try:
+                        crnt_part = importlib.import_module(
+                            ".".join([mod_name, *splits[: ii + 1]])
+                        )
 
-                raise AttributeError(
-                    f"No attribute named `{attr_name}` in the path `{path}`."
-                )
+                        # TODO: this feel a bit tortured
+                        backup_succeeded = True
+                    except ImportError:
+                        raise
+
+                if not backup_succeeded:
+                    raise AttributeError(
+                        f"No attribute named `{attr_name}` in the path `{path}`."
+                    )
+
+            # try to set canonical_path ----
+            if not isinstance(crnt_part, ModuleType) and not canonical_path:
+                canonical_path = crnt_part.__module__ + ":" + ".".join(splits[ii:])
+            elif isinstance(crnt_part, ModuleType) and ii == (len(splits) - 1):
+                # final object is module
+                canonical_path = crnt_part.__name__
+
+            parts.append(crnt_part)
 
         if canonical_path is None:
             raise ValueError(f"Cannot find canonical path for `{path}`")
